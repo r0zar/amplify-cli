@@ -14,7 +14,6 @@ export async function initializeEnv(context: $TSContext, currentAmplifyMeta?: $T
 
     const amplifyMeta: $TSMeta = {};
     const teamProviderInfo = stateManager.getTeamProviderInfo(projectPath);
-
     amplifyMeta.providers = _.pick(teamProviderInfo[currentEnv], 'awscloudformation');
 
     if (!currentAmplifyMeta) {
@@ -62,7 +61,11 @@ export async function initializeEnv(context: $TSContext, currentAmplifyMeta?: $T
       isPulling ? `Fetching updates to backend environment: ${currentEnv} from the cloud.` : `Initializing your environment: ${currentEnv}`,
     );
 
-    await sequential(initializationTasks);
+    try {
+      await sequential(initializationTasks);
+    } catch (e) {
+      throw Error(`Environment '${currentEnv}' not found in team-provider-info.json.`);
+    }
 
     spinner.succeed(
       isPulling ? `Successfully pulled backend environment ${currentEnv} from the cloud.` : 'Initialized provider successfully.',
