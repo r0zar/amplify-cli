@@ -2,8 +2,8 @@ import { constructCFModelTableNameComponent, constructCFModelTableArnComponent }
 import inquirer from 'inquirer';
 import path from 'path';
 import * as TransformPackage from 'graphql-transformer-core';
-import _ from 'lodash';
-import { topLevelCommentPrefix, topLevelCommentSuffix, envVarPrintoutPrefix, CRUDOperation } from '../../../constants';
+import _, { get } from 'lodash';
+import { topLevelCommentPrefix, topLevelCommentSuffix, envVarPrintoutPrefix, CRUDOperation, GraphQLOperation } from '../../../constants';
 import { ServiceName } from '../utils/constants';
 import {
   fetchPermissionCategories,
@@ -49,6 +49,7 @@ export const askExecRolePermissionsQuestions = async (
   let categoryPolicies = [];
   let resources = [];
   const crudOptions = _.values(CRUDOperation);
+  const graphqlOperations = _.values(GraphQLOperation);
   const permissions = {};
 
   const backendDir = context.amplify.pathManager.getBackendDirPath();
@@ -107,6 +108,19 @@ export const askExecRolePermissionsQuestions = async (
       }
 
       for (let resourceName of selectedResources) {
+        // If the resource is AppSync, use GraphQL operations for permission policies.
+        // Otherwise, default to CRUD permissions.
+        const serviceType = get(context.amplify.getProjectMeta(), [category, resourceName, 'service']);
+        let options;
+        switch (serviceType) {
+          case 'AppSync':
+            options = graphqlOperations;
+            break;
+          default:
+            options = crudOptions;
+            break;
+        }
+
         if (
           // In case of some resources they are not in the meta file so check for resource existence as well
           amplifyMeta[category] &&
@@ -116,25 +130,24 @@ export const askExecRolePermissionsQuestions = async (
           context.print.warning(`Policies cannot be added for ${category}/${resourceName}, since it is a MobileHub imported resource.`);
           continue;
         } else {
-          const crudPermissionQuestion = {
+          const permissionQuestion = {
             type: 'checkbox',
-            name: 'crudOptions',
+            name: 'options',
             message: `Select the operations you want to permit for ${resourceName}`,
-            choices: crudOptions,
+            choices: options,
             validate: value => {
               if (value.length === 0) {
                 return 'You must select at least one operation';
               }
-
               return true;
             },
-            default: fetchPermissionsForResourceInCategory(currentPermissionMap, category, resourceName),
+            default: fetchPermissionsForResourceInCategory(currentPermissionMap, category, resourceName, serviceType),
           };
 
-          const crudPermissionAnswer = await inquirer.prompt([crudPermissionQuestion]);
+          const permissionAnswer = await inquirer.prompt([permissionQuestion]);
 
-          const resourcePolicy: any = crudPermissionAnswer.crudOptions;
-          // overload crudOptions when user selects graphql @model-backing DynamoDB table
+          const resourcePolicy: any = permissionAnswer.options;
+          // overload options when user selects graphql @model-backing DynamoDB table
           // as there is no actual storage category resource where getPermissionPolicies can derive service and provider
           if (resourceName.endsWith(appsyncTableSuffix)) {
             resourcePolicy.providerPlugin = 'awscloudformation';
